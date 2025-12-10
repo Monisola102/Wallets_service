@@ -3,25 +3,28 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
+import * as bodyParser from 'body-parser';
+
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
-  // Global validation pipe
+  app.use(
+    bodyParser.json({
+      verify: (req: any, res, buf) => {
+        req.rawBody = buf.toString();
+      },
+    }),
+  );
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
-
-  // Swagger setup
   const config = new DocumentBuilder()
     .setTitle('Wallet Service API')
     .setDescription('API documentation for Wallet Service with Paystack, JWT & API Keys')
     .setVersion('1.0')
-    .addBearerAuth() // For JWT auth in Swagger
+    .addBearerAuth() 
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
-
-  // Get port from .env
   const configService = app.get(ConfigService);
   const port = configService.get<number>('APP_PORT') || 3000;
 

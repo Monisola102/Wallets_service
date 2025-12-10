@@ -7,16 +7,16 @@ import { JwtAuthGuard } from '@/auth/utils/jwt-auth.guard';
 @Controller('keys')
 export class ApikeyController {
   constructor(private apikeyService: ApikeyService) {}
-
-  @Post('create')
-  @UseGuards(JwtAuthGuard)
-  async create(@Req() req:any, @Body() dto: CreateApiKeyDto) {
-    return this.apikeyService.createApiKey(req.user.sub, dto);
-  }
+@Post('create')
+@UseGuards(JwtAuthGuard)
+async create(@Req() req: any, @Body() dto: CreateApiKeyDto) {
+  console.log('User from JWT:', req.user);
+  return this.apikeyService.createApiKey(req.user.id, dto);
+}
 
   @Post('rollover')
   @UseGuards(JwtAuthGuard)
   async rollover(@Req() req:any, @Body() dto: RolloverApiKeyDto) {
-    return this.apikeyService.rolloverApiKey(req.user.sub, dto);
+    return this.apikeyService.rolloverApiKey(req.user.id, dto);
   }
 }
