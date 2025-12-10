@@ -29,7 +29,7 @@ export class AuthController {
 @Post('refresh')
 refreshToken(@Request() req: any) {
   const payload = { sub: req.user.id, email: req.user.email };
-  const accessToken = this.jwtService.sign(payload); // short-lived
+  const accessToken = this.jwtService.sign(payload); 
   return { access_token: accessToken };
 }
 
