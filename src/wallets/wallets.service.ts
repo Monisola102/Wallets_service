@@ -28,17 +28,24 @@ export class WalletService {
     return wallet;
   }
 
-  async getWalletByUserId(userId: string): Promise<Wallet> {
-    const wallet = await this.prisma.wallet.findUnique({
-      where: { userId },
+async getWalletByUserId(userId: string): Promise<Wallet> {
+  let wallet = await this.prisma.wallet.findUnique({
+    where: { userId },
+  });
+
+  // Auto-create wallet if it doesn't exist
+  if (!wallet) {
+    wallet = await this.prisma.wallet.create({
+      data: {
+        userId,
+        walletNumber: this.generateWalletNumber(),
+        balance: 0,
+      },
     });
-
-    if (!wallet) {
-      throw new NotFoundException('Wallet not found');
-    }
-
-    return wallet;
   }
+
+  return wallet;
+}
 
   async getWalletByNumber(walletNumber: string): Promise<Wallet> {
     const wallet = await this.prisma.wallet.findUnique({
