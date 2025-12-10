@@ -60,7 +60,7 @@ export class PaystackController {
       TransactionStatus.SUCCESS,
     );
     await this.walletService.creditWallet(
-      transaction.walletId,
+      data.reference,
       data.amount / 100, 
       'PAYSTACK', 
     );

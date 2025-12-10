@@ -33,7 +33,6 @@ async getWalletByUserId(userId: string): Promise<Wallet> {
     where: { userId },
   });
 
-  // Auto-create wallet if it doesn't exist
   if (!wallet) {
     wallet = await this.prisma.wallet.create({
       data: {
