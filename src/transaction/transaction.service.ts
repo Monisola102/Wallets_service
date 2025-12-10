@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, Transaction } from '@prisma/client';
-import { TransactionStatus,TransactionType } from 'generated/prisma/enums';
+import { Transaction } from 'generated/prisma/client';
+import { TransactionStatus, TransactionType } from 'generated/prisma/enums';
 
 @Injectable()
 export class TransactionService {
@@ -12,7 +12,7 @@ export class TransactionService {
     amount: number,
     reference: string,
     recipientWalletId?: string,
-  ): Promise<Transaction> {
+  ) {
     const wallet = await this.prisma.wallet.findUnique({
       where: { id: walletId },
     });
@@ -29,14 +29,11 @@ export class TransactionService {
         amount,
         reference,
         status: TransactionStatus.PENDING,
-        ...(recipientWalletId && { meta: { recipientWalletId } as Prisma.InputJsonValue }),
+        ...(recipientWalletId && { meta: { recipientWalletId } as any }),
       },
     });
   }
-  async updateTransactionStatus(
-    reference: string,
-    status: TransactionStatus,
-  ): Promise<Transaction> {
+  async updateTransactionStatus(reference: string, status: TransactionStatus) {
     const transaction = await this.prisma.transaction.findUnique({
       where: { reference },
     });
@@ -50,13 +47,13 @@ export class TransactionService {
       data: { status },
     });
   }
-  async getTransactionsByWalletId(walletId: string): Promise<Transaction[]> {
+  async getTransactionsByWalletId(walletId: string) {
     return await this.prisma.transaction.findMany({
       where: { walletId },
       orderBy: { createdAt: 'desc' },
     });
   }
-  async findByReference(reference: string): Promise<Transaction | null> {
+  async findByReference(reference: string) {
     return await this.prisma.transaction.findUnique({
       where: { reference },
     });

@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TransactionService } from '../transaction/transaction.service';
-import { Wallet } from '@prisma/client';
+import { Wallet } from 'generated/prisma/client';
 import { TransactionStatus, TransactionType } from 'generated/prisma/enums';
 @Injectable()
 export class WalletService {
