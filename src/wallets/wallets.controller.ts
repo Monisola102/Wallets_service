@@ -168,7 +168,7 @@ export class WalletController {
       await this.transactionService.getTransactionsByWalletId(wallet.id);
 
    return transactions.map(
-  (t): TransactionResponseDto => ({
+  (t:any): TransactionResponseDto => ({
     type: t.type as TransactionType,
     amount: Number(t.amount),
     status: t.status as TransactionStatus,

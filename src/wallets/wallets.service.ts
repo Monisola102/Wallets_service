@@ -102,7 +102,7 @@ export class WalletService {
     amount: number,
   ): Promise<{ status: string; message: string }> {
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx:any) => {
         // Find sender wallet
         const senderWallet = await tx.wallet.findUnique({
           where: { userId: senderUserId },
