@@ -1,9 +1,16 @@
-import { Module } from '@nestjs/common';
-import { WalletsController } from './wallets.controller';
-import { WalletsService } from './wallets.service';
-
+import { Module, forwardRef} from '@nestjs/common';
+import { WalletController } from './wallets.controller';
+import { WalletService } from './wallets.service';
+import { PrismaModule } from '@/prisma/prisma.module';
+import { TransactionModule } from '@/transaction/transaction.module';
+import { AuthModule } from '@/auth/auth.module';
+import { PaystackModule } from '@/paystack/paystack.module';
 @Module({
-  controllers: [WalletsController],
-  providers: [WalletsService]
+  imports: [PrismaModule, TransactionModule,AuthModule,forwardRef(() => PaystackModule) 
+],
+  controllers: [WalletController],
+  providers: [WalletService],
+  exports: [WalletService] 
+
 })
 export class WalletsModule {}

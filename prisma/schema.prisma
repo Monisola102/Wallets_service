@@ -5,7 +5,8 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -42,14 +43,25 @@ model Transaction {
   walletId  String
   userId    String
   amount    Float
-  type      String
-  status    String
+  type      TransactionType
+  status    TransactionStatus @default(PENDING) // Use enum
   reference String   @unique
   meta      Json?
   createdAt DateTime @default(now())
 
   wallet    Wallet   @relation(fields: [walletId], references: [id], name: "WalletTransactions")
   user      User     @relation(fields: [userId], references: [id])
+}
+enum TransactionType {
+  DEPOSIT
+  WITHDRAW
+  TRANSFER
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
 }
 
 model ApiKey {

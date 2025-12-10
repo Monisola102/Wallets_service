@@ -15,9 +15,9 @@ import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { JwtAuthGuard } from '@/auth/utils/jwt-auth.guard';
+import { JwtAuthGuard } from '@/utils/jwt-auth.guard';
 import { Request } from 'express';
-import { AuthJwtPayload } from '@/auth/types/auth.jwtPayload';
+import { AuthJwtPayload } from '@/types/auth.jwtPayload';
 
 @ApiTags('users')
 @Controller('users')

@@ -4,218 +4,180 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import axios from 'axios';
-import { InitializeTransactionDto } from './dto/initialize-transaction.dto';
-import { PayStackCallbackDto } from './dto/paystack-callback.dto';
-import { PaystackWebhookDto } from './dto/paystack-webhook.dto';
-import * as crypto from 'crypto';
-
+import { TransactionService } from '../transaction/transaction.service';
+import { Wallet } from '@prisma/client';
+import { TransactionStatus, TransactionType } from 'generated/prisma/enums';
 @Injectable()
-export class WalletsService {
-  constructor(private readonly prisma: PrismaService) {}
-  async initializeDeposit(dto: InitializeTransactionDto, userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
+export class WalletService {
+  constructor(
+    private prisma: PrismaService,
+    private transactionService: TransactionService,
+  ) {}
 
-    const amountInKobo = dto.amount * 100;
+  async createWallet(userId: string): Promise<Wallet> {
+    const walletNumber = this.generateWalletNumber();
 
-    const response = await axios.post(
-      'https://api.paystack.co/transaction/initialize',
-      {
-        email: user.email,
-        amount: amountInKobo,
-        callback_url: process.env.PAYSTACK_CALLBACK_URL,
+    const wallet = await this.prisma.wallet.create({
+      data: {
+        userId,
+        walletNumber,
+        balance: 0,
       },
-      {
-        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` },
-      },
-    );
-    const init = response.data.data;
-
-    return {
-      reference: init.reference,
-      authorization_url: init.authorization_url,
-    };
-  }
-  async verifyTransaction(query: PayStackCallbackDto) {
-    const { reference } = query;
-    let existingTx = await this.prisma.transaction.findUnique({
-      where: { reference },
     });
 
-    if (!existingTx) {
-      const paystackRes = await axios.get(
-        `https://api.paystack.co/transaction/verify/${reference}`,
-        { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } },
+    return wallet;
+  }
+
+  async getWalletByUserId(userId: string): Promise<Wallet> {
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { userId },
+    });
+
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
+    }
+
+    return wallet;
+  }
+
+  async getWalletByNumber(walletNumber: string): Promise<Wallet> {
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { walletNumber },
+    });
+
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
+    }
+
+    return wallet;
+  }
+
+  async creditWallet(
+    reference: string,
+    amount: number,
+    paystackStatus: string,
+  ): Promise<void> {
+    const transaction =
+      await this.transactionService.findByReference(reference);
+
+    if (!transaction) {
+      throw new BadRequestException('Transaction not found');
+    }
+
+    if (transaction.status === TransactionStatus.SUCCESS) {
+      return;
+    }
+
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { id: transaction.walletId },
+    });
+
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
+    }
+
+    if (paystackStatus === 'success') {
+      await this.prisma.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: Number(wallet.balance) + Number(amount),
+        },
+      });
+
+      await this.transactionService.updateTransactionStatus(
+        reference,
+        TransactionStatus.SUCCESS,
       );
-
-      const { status, amount, customer } = paystackRes.data.data;
-
-      if (status !== 'success')
-        throw new BadRequestException('Payment not successful');
-      let user = await this.prisma.user.findUnique({
-        where: { email: customer.email },
-      });
-      if (!user) {
-        const fullName = customer.name || 'Test User';
-        const [firstName, ...lastNameParts] = fullName.split(' ');
-        const lastName = lastNameParts.join(' ') || ' ';
-
-        user = await this.prisma.user.create({
-          data: {
-            email: customer.email,
-            firstName,
-            lastName,
-          },
-        });
-      }
-      let wallet = await this.prisma.wallet.findUnique({
-        where: { userId: user.id },
-      });
-      if (!wallet) {
-        wallet = await this.prisma.wallet.create({
-          data: {
-            userId: user.id,
-            balance: 0,
-            walletNumber: this.generateWalletNumber(),
-          },
-        });
-      }
-      wallet = await this.prisma.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: { increment: amount / 100 } },
-      });
-      existingTx = await this.prisma.transaction.create({
-        data: {
-          userId: user.id,
-          walletId: wallet.id,
-          amount: amount / 100,
-          type: 'deposit',
-          status: 'success',
-          reference,
-        },
-      });
+    } else {
+      await this.transactionService.updateTransactionStatus(
+        reference,
+        TransactionStatus.FAILED,
+      );
     }
-    return existingTx;
   }
 
-   async handlePaystackWebhook(rawBody: string, signature: string) {
-    const hash = crypto
-      .createHmac('sha512', process.env.PAYSTACK_SECRET!)
-      .update(rawBody)
-      .digest('hex');
-
-    if (hash !== signature) {
-      console.log('Invalid Paystack signature');
-      throw new BadRequestException('Invalid signature');
-    }
-
-    const dto: PaystackWebhookDto = JSON.parse(rawBody);
-    const event = dto.event;
-    const data = dto.data;
-
-    console.log('Webhook event:', event);
-    console.log('Webhook data:', data);
-    if (event !== 'charge.success') {
-      console.log('Ignoring event:', event);
-      return;
-    }
-
-    const reference = data.reference;
-    const existingTx = await this.prisma.transaction.findUnique({
-      where: { reference },
-    });
-    if (existingTx) {
-      console.log('Transaction already processed:', reference);
-      return;
-    }
-
-    const amount = data.amount; 
-    const userId = data.customer.id;
-    await this.prisma.$transaction(async (prisma) => {
-      let wallet = await prisma.wallet.findUnique({ where: { userId } });
-      if (!wallet) {
-        wallet = await prisma.wallet.create({
-          data: {
-            userId,
-            balance: 0,
-            walletNumber: this.generateWalletNumber(),
-          },
-        });
-        console.log('Created new wallet for user:', userId);
-      }
-
-      await prisma.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: { increment: amount / 100 } },
-      });
-      console.log(`Wallet credited for user ${userId}: ${amount / 100}`);
-
-      await prisma.transaction.create({
-        data: {
-          userId,
-          walletId: wallet.id,
-          amount: amount / 100,
-          type: 'deposit',
-          status: 'success',
-          reference,
-        },
-      });
-      console.log('Transaction logged:', reference);
-    });
-  }
-
-  async getBalance(userId: string) {
-    const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
-    return { balance: wallet?.balance || 0 };
-  }
   async transfer(
-    userId: string,
-    dto: { walletNumber: string; amount: number },
-  ) {
-    const senderWallet = await this.prisma.wallet.findUnique({
-      where: { userId },
-    });
-    if (!senderWallet) throw new NotFoundException('Sender wallet not found');
-    if (senderWallet.balance < dto.amount)
-      throw new BadRequestException('Insufficient balance');
+    senderUserId: string,
+    recipientWalletNumber: string,
+    amount: number,
+  ): Promise<{ status: string; message: string }> {
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Find sender wallet
+        const senderWallet = await tx.wallet.findUnique({
+          where: { userId: senderUserId },
+        });
 
-    const recipientWallet = await this.prisma.wallet.findUnique({
-      where: { walletNumber: dto.walletNumber },
-    });
-    if (!recipientWallet)
-      throw new NotFoundException('Recipient wallet not found');
+        if (!senderWallet) {
+          throw new NotFoundException('Sender wallet not found');
+        }
 
-    return await this.prisma.$transaction(async (prisma) => {
-      await prisma.wallet.update({
-        where: { id: senderWallet.id },
-        data: { balance: { decrement: dto.amount } },
+        if (Number(senderWallet.balance) < amount) {
+          throw new BadRequestException('Insufficient balance');
+        }
+
+        // Find recipient wallet
+        const recipientWallet = await tx.wallet.findUnique({
+          where: { walletNumber: recipientWalletNumber },
+        });
+
+        if (!recipientWallet) {
+          throw new NotFoundException('Recipient wallet not found');
+        }
+
+        if (senderWallet.id === recipientWallet.id) {
+          throw new BadRequestException('Cannot transfer to your own wallet');
+        }
+
+        // Deduct from sender
+        await tx.wallet.update({
+          where: { id: senderWallet.id },
+          data: {
+            balance: Number(senderWallet.balance) - amount,
+          },
+        });
+
+        // Credit recipient
+        await tx.wallet.update({
+          where: { id: recipientWallet.id },
+          data: {
+            balance: Number(recipientWallet.balance) + amount,
+          },
+        });
+
+        // Create transaction record
+        const transaction = await tx.transaction.create({
+          data: {
+            walletId: senderWallet.id,
+            userId: senderUserId,
+            type: TransactionType.TRANSFER,
+            amount,
+            status: TransactionStatus.SUCCESS,
+            reference: this.generateReference(),
+            meta: {
+              recipientWalletId: recipientWallet.id,
+              recipientWalletNumber: recipientWalletNumber,
+            },
+          },
+        });
+
+        return transaction;
       });
 
-      await prisma.wallet.update({
-        where: { id: recipientWallet.id },
-        data: { balance: { increment: dto.amount } },
-      });
-
-      return await prisma.transaction.create({
-        data: {
-          userId,
-          walletId: senderWallet.id,
-          amount: dto.amount,
-          type: 'transfer',
-          status: 'success',
-          reference: `transfer_${Date.now()}`,
-        },
-      });
-    });
+      return {
+        status: 'success',
+        message: 'Transfer completed',
+      };
+    } catch (error) {
+      throw error;
+    }
   }
-  async history(userId: string) {
-    return await this.prisma.transaction.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
+
   private generateWalletNumber(): string {
-    return Math.floor(100000000000 + Math.random() * 900000000000).toString();
+    return Math.floor(1000000000000 + Math.random() * 9000000000000).toString();
+  }
+
+  private generateReference(): string {
+    return `TXN_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   }
 }

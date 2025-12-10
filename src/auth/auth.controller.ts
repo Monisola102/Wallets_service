@@ -9,12 +9,12 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { GoogleAuthGuard } from './utils/Guards';
+import { GoogleAuthGuard } from '../utils/Guards';
 import { AuthService } from './auth.service';
 import { JwtService } from '@nestjs/jwt';
-import { LocalAuthGuard } from './utils/local-auth.guard';
-import { RefreshAuthGuard } from './utils/refresh-auth.guard';
-
+import { LocalAuthGuard } from '../utils/local-auth.guard';
+import { RefreshAuthGuard } from '../utils/refresh-auth.guard';
+import { AuthResponseDto } from './dto/auth-response.dto';
 @ApiTags('Google Auth')
 @Controller('auth')
 export class AuthController {
@@ -33,15 +33,27 @@ refreshToken(@Request() req: any) {
   return { access_token: accessToken };
 }
 
-  @Get('google/login')
-  @ApiOperation({ summary: 'Redirect user to Google for login' })
-  @ApiResponse({ status: 302, description: 'Redirects to Google OAuth screen' })
+  @Get('google')
+ @ApiOperation({
+    summary: 'Initiate Google OAuth login',
+    description:
+      'Redirects to Google OAuth consent page. Use this in a browser.',
+  })
+  @ApiResponse({ status: 302, description: 'Redirects to Google OAuth' })
   @UseGuards(GoogleAuthGuard)
   handleLogin() {}
 
   @Get('google/callback')
-@ApiOperation({ summary: 'Google OAuth callback URL' })
-@ApiResponse({ status: 200, description: 'Google authentication successful' })
+ @ApiOperation({
+    summary: 'Google OAuth callback',
+    description: 'Handles Google OAuth callback and returns JWT token',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Successfully authenticated',
+    type: AuthResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Authentication failed' })
 @UseGuards(GoogleAuthGuard)
 async handleRedirect(@Request() req: any) {
   const loginResponse = await this.authService.login(req.user);
