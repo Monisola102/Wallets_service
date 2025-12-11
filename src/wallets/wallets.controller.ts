@@ -211,7 +211,7 @@ export class WalletController {
       amount: Number(transaction.amount),
     };
   }
- @Get('callback')
+@Get('callback')
 @ApiOperation({
   summary: 'Paystack deposit callback',
   description: 'Called by Paystack after a transaction. No authentication required.',
@@ -231,23 +231,19 @@ export class WalletController {
 async handlePaystackCallback(@Query('reference') reference: string) {
   try {
     const transaction = await this.transactionService.findByReference(reference);
-
     if (!transaction) {
       throw new NotFoundException('Transaction not found');
     }
-    const { status, amount } = await this.paystackService.verifyTransaction(reference);
-    let newStatus: TransactionStatus;
-    if (status === 'success') {
-      newStatus = TransactionStatus.SUCCESS;
-      if (transaction.status !== TransactionStatus.SUCCESS) {
-        await this.walletService.creditWallet(reference, amount, status);
-      }
-    } else {
-      newStatus = TransactionStatus.FAILED;
+const { status, amount } = await this.paystackService.verifyTransaction(reference) as { status: 'success' | 'failed' | 'abandoned' | 'pending', amount: number };
+    if (status === 'success' && transaction.status !== TransactionStatus.SUCCESS) {
+      await this.walletService.creditWallet(reference, amount, status);
+      transaction.status = TransactionStatus.SUCCESS;
+    } else if (status === 'failed' && transaction.status !== TransactionStatus.FAILED) {
+      transaction.status = TransactionStatus.FAILED;
+    } else if ((status === 'abandoned' || status === 'pending') && transaction.status !== TransactionStatus.PENDING) {
+      transaction.status = TransactionStatus.PENDING;
     }
-    if (transaction.status !== newStatus) {
-      await this.transactionService.updateTransactionStatus(transaction.id, newStatus);
-    }
+    await this.transactionService.updateTransactionStatus(transaction.id, transaction.status);
 
     return {
       reference,
@@ -256,7 +252,11 @@ async handlePaystackCallback(@Query('reference') reference: string) {
     };
   } catch (error) {
     console.error('Paystack callback error:', error);
-    throw error;
+    return {
+      reference,
+      status: 'error',
+      message: error.message || 'An error occurred while processing the transaction',
+    };
   }
 }
 
