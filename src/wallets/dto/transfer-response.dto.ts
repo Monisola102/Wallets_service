@@ -6,4 +6,5 @@ export class TransferResponseDto {
 
   @ApiProperty({ example: 'Transfer completed' })
   message: string;
+
 }

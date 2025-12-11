@@ -45,7 +45,6 @@ async getWalletByUserId(userId: string): Promise<Wallet> {
 
   return wallet;
 }
-
   async getWalletByNumber(walletNumber: string): Promise<Wallet> {
     const wallet = await this.prisma.wallet.findUnique({
       where: { walletNumber },
