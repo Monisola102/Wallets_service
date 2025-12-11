@@ -7,7 +7,8 @@ import {
   Param,
   NotFoundException,
   forwardRef,
-  Inject
+  Inject,
+  Query
 } from '@nestjs/common';
 import { WalletService } from './wallets.service';
 import { TransactionService} from '../transaction/transaction.service';
@@ -210,4 +211,54 @@ export class WalletController {
       amount: Number(transaction.amount),
     };
   }
+ @Get('callback')
+@ApiOperation({
+  summary: 'Paystack deposit callback',
+  description: 'Called by Paystack after a transaction. No authentication required.',
+})
+@ApiResponse({
+  status: 200,
+  description: 'Deposit processed',
+  schema: {
+    example: {
+      reference: 'dep_1765451336589_74401748',
+      status: 'success',
+      amount: 5000,
+    },
+  },
+})
+@ApiResponse({ status: 404, description: 'Transaction not found' })
+async handlePaystackCallback(@Query('reference') reference: string) {
+  try {
+    const transaction = await this.transactionService.findByReference(reference);
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+    const { status, amount } = await this.paystackService.verifyTransaction(reference);
+    let newStatus: TransactionStatus;
+    if (status === 'success') {
+      newStatus = TransactionStatus.SUCCESS;
+      if (transaction.status !== TransactionStatus.SUCCESS) {
+        await this.walletService.creditWallet(reference, amount, status);
+      }
+    } else {
+      newStatus = TransactionStatus.FAILED;
+    }
+    if (transaction.status !== newStatus) {
+      await this.transactionService.updateTransactionStatus(transaction.id, newStatus);
+    }
+
+    return {
+      reference,
+      status,
+      amount,
+    };
+  } catch (error) {
+    console.error('Paystack callback error:', error);
+    throw error;
+  }
+}
+
+
 }
