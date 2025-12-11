@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import * as crypto from 'crypto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
@@ -19,29 +19,32 @@ export class ApiKeyGuard implements CanActivate {
     if (!apiKey) {
       throw new UnauthorizedException('API key required');
     }
-    const prefix = apiKey.slice(0, 12);
-
-    const key = await this.prisma.apiKey.findFirst({
-      where: { prefix },
-      include: { user: true },
+    const apiKeys = await this.prisma.apiKey.findMany({
+      where: { 
+        revoked: false,
+        expiresAt: { gt: new Date() }
+      },
+      include: { user: true }
     });
+    let validKey = null;
+    for (const key of apiKeys) {
+      const isValid = await bcrypt.compare(apiKey, key.hashedKey);
+      if (isValid) {
+        validKey = key;
+        break;
+      }
+    }
 
-    if (!key) {
+    if (!validKey) {
       throw new ForbiddenException('Invalid API key');
     }
-    const hashedIncoming = crypto
-      .createHash('sha256')
-      .update(apiKey)
-      .digest('hex');
-
-    if (hashedIncoming !== key.hashedKey) {
-      throw new ForbiddenException('Invalid API key signature');
-    }
-
-    if (key.revoked || key.expiresAt < new Date()) {
-      throw new ForbiddenException('API key expired or revoked');
-    }
-    request.user = { id: key.userId, apiKey: true };
+    request.user = { 
+      userId: validKey.userId,
+      email: validKey.user?.email,
+      sub: validKey.userId,
+      apiKey: true,
+      permissions: validKey.permissions
+    };
 
     return true;
   }
