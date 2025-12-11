@@ -19,7 +19,6 @@ export class OptionalAuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
 
-    // Check which authentication method is being used
     const authHeader = request.headers.authorization;
     const hasJwt = authHeader?.startsWith('Bearer ');
     const hasApiKey = !!request.headers['x-api-key'];
@@ -32,15 +31,21 @@ export class OptionalAuthGuard implements CanActivate {
       }
       return await Promise.resolve(result);
     };
-
-    // If both are provided, prioritize JWT
     if (hasJwt) {
       try {
         const result = this.jwtAuthGuard.canActivate(context);
-        // Handle both sync and async returns from canActivate
         return await resolveGuardResult(result);
-      } catch (error) {
-        // JWT validation failed
+      } catch (jwtError) {
+        if (hasApiKey) {
+          try {
+            return await this.apiKeyGuard.canActivate(context);
+          } catch (apiKeyError) {
+
+            throw new UnauthorizedException(
+              'Invalid JWT token and invalid API key provided.'
+            );
+          }
+        }
         throw new UnauthorizedException('Invalid or expired JWT token.');
       }
     }
