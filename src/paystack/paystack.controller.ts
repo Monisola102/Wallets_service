@@ -11,6 +11,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { PrismaService } from '@/prisma/prisma.service';
 
 @ApiTags('Webhooks')
 @Controller('wallet/paystack')
@@ -21,6 +22,7 @@ export class PaystackController {
   @Inject(forwardRef(() => WalletService)) // ← Add this decorator
     private readonly walletService: WalletService,
     private readonly transactionService: TransactionService,
+    private readonly prisma:PrismaService
   ) {}
 
   @Post('webhook')
@@ -48,23 +50,29 @@ export class PaystackController {
 
     return { status: true };
   }
-  private async handleSuccessfulPayment(data: PaystackWebhookDto['data']) {
-    this.logger.log(`Processing payment for reference: ${data.reference}`);
-    const transaction = await this.transactionService.findByReference(data.reference);
-    if (!transaction) {
-      this.logger.warn(`Transaction not found for reference: ${data.reference}`);
-      throw new BadRequestException('Transaction not found');
-    }
-    await this.transactionService.updateTransactionStatus(
-      data.reference,
-      TransactionStatus.SUCCESS,
-    );
-    await this.walletService.creditWallet(
-      data.reference,
-      data.amount / 100, 
-      'PAYSTACK', 
-    );
-
-    this.logger.log(`Wallet credited successfully for ${data.reference}`);
+ private async handleSuccessfulPayment(data: PaystackWebhookDto['data']) {
+  this.logger.log(`Processing payment for reference: ${data.reference}`);
+  
+  const transaction = await this.transactionService.findByReference(data.reference);
+  if (!transaction) {
+    this.logger.warn(`Transaction not found for reference: ${data.reference}`);
+    throw new BadRequestException('Transaction not found');
   }
+
+  // Update transaction status
+  await this.transactionService.updateTransactionStatus(
+    data.reference,
+    TransactionStatus.SUCCESS,
+  );
+
+  // Credit the wallet directly
+  await this.prisma.wallet.update({
+    where: { id: transaction.walletId },
+    data: {
+      balance: { increment: data.amount / 100 },
+    },
+  });
+
+  this.logger.log(`Wallet credited successfully for ${data.reference}`);
+}
 }
