@@ -8,11 +8,11 @@ import {
   NotFoundException,
   forwardRef,
   Inject,
-  Query
+  Query,
 } from '@nestjs/common';
 import { WalletService } from './wallets.service';
-import { TransactionService} from '../transaction/transaction.service';
-import { TransactionType,TransactionStatus } from 'generated/prisma/enums';
+import { TransactionService } from '../transaction/transaction.service';
+import { TransactionType, TransactionStatus } from 'generated/prisma/enums';
 import { PaystackService } from '../paystack/paystack.service';
 import { TransferDto } from './dto/transfer.dto';
 import { BalanceResponseDto } from './dto/balance-response.dto';
@@ -40,7 +40,7 @@ export class WalletController {
   constructor(
     private readonly walletService: WalletService,
     private readonly transactionService: TransactionService,
-     @Inject(forwardRef(() => PaystackService))
+    @Inject(forwardRef(() => PaystackService))
     private readonly paystackService: PaystackService,
   ) {}
 
@@ -168,97 +168,12 @@ export class WalletController {
     const transactions =
       await this.transactionService.getTransactionsByWalletId(wallet.id);
 
-   return transactions.map(
-  (t:any): TransactionResponseDto => ({
-    type: t.type as TransactionType,
-    amount: Number(t.amount),
-    status: t.status as TransactionStatus,
-  }),
-);
-
+    return transactions.map(
+      (t: any): TransactionResponseDto => ({
+        type: t.type as TransactionType,
+        amount: Number(t.amount),
+        status: t.status as TransactionStatus,
+      }),
+    );
   }
-
-  @Get('deposit/:reference/status')
-  @ApiOperation({
-    summary: 'Check deposit status',
-    description:
-      'Check the status of a deposit transaction. No authentication required (used as Paystack callback).',
-  })
-  @ApiParam({ name: 'reference', example: 'dep_1765327886986_b58962b0' })
-  @ApiResponse({
-    status: 200,
-    description: 'Transaction status retrieved',
-    schema: {
-      example: {
-        reference: 'dep_1765327886986_b58962b0',
-        status: 'success',
-        amount: 5000,
-      },
-    },
-  })
-  @ApiResponse({ status: 404, description: 'Transaction not found' })
-  async getDepositStatus(@Param('reference') reference: string) {
-    const transaction =
-      await this.transactionService.findByReference(reference);
-
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
-    }
-
-    return {
-      reference: transaction.reference,
-      status: transaction.status,
-      amount: Number(transaction.amount),
-    };
-  }
-@Get('callback')
-@ApiOperation({
-  summary: 'Paystack deposit callback',
-  description: 'Called by Paystack after a transaction. No authentication required.',
-})
-@ApiResponse({
-  status: 200,
-  description: 'Deposit processed',
-  schema: {
-    example: {
-      reference: 'dep_1765451336589_74401748',
-      status: 'success',
-      amount: 5000,
-    },
-  },
-})
-@ApiResponse({ status: 404, description: 'Transaction not found' })
-async handlePaystackCallback(@Query('reference') reference: string) {
-  try {
-    const transaction = await this.transactionService.findByReference(reference);
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
-    }
-const { status, amount } = await this.paystackService.verifyTransaction(reference) as { status: 'success' | 'failed' | 'abandoned' | 'pending', amount: number };
-    if (status === 'success' && transaction.status !== TransactionStatus.SUCCESS) {
-      await this.walletService.creditWallet(reference, amount, status);
-      transaction.status = TransactionStatus.SUCCESS;
-    } else if (status === 'failed' && transaction.status !== TransactionStatus.FAILED) {
-      transaction.status = TransactionStatus.FAILED;
-    } else if ((status === 'abandoned' || status === 'pending') && transaction.status !== TransactionStatus.PENDING) {
-      transaction.status = TransactionStatus.PENDING;
-    }
-    await this.transactionService.updateTransactionStatus(transaction.id, transaction.status);
-
-    return {
-      reference,
-      status,
-      amount,
-    };
-  } catch (error) {
-    console.error('Paystack callback error:', error);
-    return {
-      reference,
-      status: 'error',
-      message: error.message || 'An error occurred while processing the transaction',
-    };
-  }
-}
-
-
 }
