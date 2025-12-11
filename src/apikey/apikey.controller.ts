@@ -1,9 +1,17 @@
-import { Controller, Post, Body, Req, UseGuards } from '@nestjs/common';
-import { ApikeyService } from './apikey.service';
+import {
+  Controller,
+  Post,
+  Body,
+  UseGuards,
+  Delete,
+  Param,
+} from '@nestjs/common';
+import { ApiKeyService } from './apikey.service';
 import { CreateApiKeyDto } from './dto/create-apikey.dto';
 import { RolloverApiKeyDto } from './dto/rollover-apikey.dto';
-import { JwtAuthGuard } from '@/utils/jwt-auth.guard';
 import { ApiKeyResponseDto } from './dto/api-key-response.dto';
+import { JwtAuthGuard } from '@/utils/jwt-auth.guard';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -11,10 +19,15 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { PayloadType } from 'src/interface/payload-types';
 
+@ApiTags('API Keys')
 @Controller('keys')
-export class ApikeyController {
-  constructor(private apikeyService: ApikeyService) {}
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth('JWT-auth')
+export class ApiKeyController {
+  constructor(private readonly apiKeyService: ApiKeyService) {}
+
   @Post('create')
   @ApiOperation({
     summary: 'Create new API key',
@@ -29,10 +42,11 @@ export class ApikeyController {
   @ApiResponse({ status: 400, description: 'Invalid input' })
   @ApiResponse({ status: 401, description: 'Unauthorized - JWT required' })
   @ApiResponse({ status: 403, description: 'Maximum 5 active keys reached' })
-  @UseGuards(JwtAuthGuard)
-  async create(@Req() req: any, @Body() dto: CreateApiKeyDto) {
-    console.log('User from JWT:', req.user);
-    return this.apikeyService.createApiKey(req.user.id, dto);
+  async create(
+    @CurrentUser() user: PayloadType,
+    @Body() dto: CreateApiKeyDto,
+  ): Promise<ApiKeyResponseDto> {
+    return this.apiKeyService.create(user.userId, dto);
   }
 
   @Post('rollover')
@@ -49,8 +63,27 @@ export class ApikeyController {
   @ApiResponse({ status: 400, description: 'Key not expired or invalid input' })
   @ApiResponse({ status: 401, description: 'Unauthorized - JWT required' })
   @ApiResponse({ status: 404, description: 'Expired key not found' })
-  @UseGuards(JwtAuthGuard)
-  async rollover(@Req() req: any, @Body() dto: RolloverApiKeyDto) {
-    return this.apikeyService.rolloverApiKey(req.user.id, dto);
+  async rollover(
+    @CurrentUser() user: PayloadType,
+    @Body() dto: RolloverApiKeyDto,
+  ): Promise<ApiKeyResponseDto> {
+    return this.apiKeyService.rollover(user.userId, dto);
+  }
+
+  @Delete(':keyId/revoke')
+  @ApiOperation({
+    summary: 'Revoke API key',
+    description: 'Permanently disable an API key. Cannot be undone.',
+  })
+  @ApiParam({ name: 'keyId', description: 'UUID of the API key to revoke' })
+  @ApiResponse({ status: 200, description: 'API key revoked successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - JWT required' })
+  @ApiResponse({ status: 404, description: 'API key not found' })
+  async revoke(
+    @CurrentUser() user: PayloadType,
+    @Param('keyId') keyId: string,
+  ): Promise<{ message: string }> {
+    await this.apiKeyService.revoke(user.userId, keyId);
+    return { message: 'API key revoked successfully' };
   }
 }
